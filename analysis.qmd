@@ -1,0 +1,746 @@
+---
+title: "Final Assessment: Return Transmission and Herding Behavior in the Semiconductor Sector"
+subtitle: "Financial Econometrics – MSc in International Management, Finance"
+author:
+  - name: "Ludovic DELOT"
+    email: "ludovic.delot‑bravo@rennes‑sb.com"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+format:
+  html:
+    theme: united            # Estilo visual cerulean, ajustable
+    highlight: tango           # Resaltado de código
+    toc: true                  # Tabla de contenido
+    toc-location: left         # Ubicación de la tabla de contenido
+    number-sections: false      # Numeración de secciones
+    section-divs: true         # Divisiones por sección
+    css: styles/custom.css     # Estilos adicionales a través de un CSS
+    embed-resources: true      # Genera un archivo HTML autónomo
+    html-math-method: katex    # Método para fórmulas matemáticas
+lang: en
+editor: visual                # Habilita editor visual en Quarto/RStudio
+fontsize: 12pt                # Tamaño de fuente
+geometry: margin=1in          # Márgenes en documento PDF
+draft: false
+---
+
+## 
+
+## II. DATA ACQUISITION & DESCRIPTION
+
+### 2.1 Ticker Selection
+
+| Ticker | Name                    | **Segme**nt   |
+|--------|-------------------------|---------------|
+| ASML   | ASML Holding            | Equipment     |
+| AMAT   | Applied Materials       | Equipment     |
+| LRCX   | Lam Research            | Equipment     |
+| KLAC   | KLA Corp                | Equipment     |
+| TER    | Teradyne                | Equipment     |
+| ONTO   | Onto Innovation         | Equipment     |
+| MKSI   | MKS Instruments         | Equipment     |
+| ENTG   | Entegris                | Materials     |
+| GLW    | Corning                 | Materials     |
+| TSM    | Taiwan Semi (TSMC)      | Manufacturing |
+| GFS    | GlobalFoundries         | Manufacturing |
+| UMC    | United Microelectronics | Manufacturing |
+| INTC   | Intel                   | Manufacturing |
+| TXN    | Texas Instruments       | Manufacturing |
+| MU     | Micron                  | Manufacturing |
+| ON     | ON Semi                 | Manufacturing |
+| MCHP   | Microchip Tech          | Manufacturing |
+| STM    | STMicroelectronics      | Manufacturing |
+| NVDA   | NVIDIA                  | Design        |
+| AMD    | AMD                     | Design        |
+| AVGO   | Broadcom                | Design        |
+| QCOM   | Qualcomm                | Design        |
+| MRVL   | Marvell Tech            | Design        |
+| ADI    | Analog Devices          | Design        |
+| NXPI   | NXP Semiconductors      | Design        |
+| ASX    | ASE Technology          | OSAT          |
+| AMKR   | Amkor Technology        | OSAT          |
+| ARW    | Arrow Electronics       | Distributor   |
+| AVT    | Avnet                   | Distributor   |
+| SOXX   | iShares Semi ETF        | Benchmark     |
+| SMH    | VanEck Semi ETF         | Benchmark     |
+| XSD    | SPDR S&P Semi ETF       | Benchmark     |
+| \^GSPC | S&P 500 Index           | Market        |
+| \^IXIC | NASDAQ Composite        | Market        |
+| QQQ    | Invesco QQQ             | Market        |
+| \^SOX  | PHLX Semiconductor      | Market        |
+| \^VIX  | CBOE VIX                | Risk          |
+| \^TNX  | US 10Y Yield            | Rates         |
+| \^IRX  | 13W T-Bill              | Rates         |
+| UUP    | US Dollar Bullish (UUP) | Rates         |
+| CL=F   | WTI Crude Oil (Front)   | Costs         |
+| HG=F   | COMEX Copper (Front)    | Costs         |
+| AAPL   | Apple                   | Downstream    |
+| TSLA   | Tesla                   | Downstream    |
+
+```{r}
+#| label: setup-packages
+#| include: false
+#| message: false
+#| warning: false
+
+if (!requireNamespace("pacman", quietly = TRUE)) {
+install.packages("pacman")
+}
+
+pacman::p_load(
+tidyverse, tidyquant, lubridate, janitor,
+moments, tseries, knitr, ggplot2,
+rugarch, FinTS, lmtest, sandwich,
+car, PerformanceAnalytics
+)
+
+```
+
+```{r}
+#| include: false
+# we create a table with tickers and their corresponding names and segments (like 'Equipment', 'Design', etc.)
+tickers_tbl <- tibble::tibble(
+  ticker  = c(
+    # Equipment / Tools
+    "ASML","AMAT","LRCX","KLAC","TER","ONTO","MKSI",
+    # Materials / Inputs
+    "ENTG","GLW",
+    # Manufacturing (Foundry/IDM/Memory/Power)
+    "TSM","GFS","UMC","INTC","TXN","MU","ON","MCHP","STM",
+    # Design / Fabless
+    "NVDA","AMD","AVGO","QCOM","MRVL","ADI","NXPI",
+    # OSAT / Packaging
+    "ASX","AMKR",
+    # Distributors
+    "ARW","AVT",
+    # Benchmarks (ETFs)
+    "SOXX","SMH","XSD",
+    # --- Controls we add ---
+    # Market & Tech
+    "^GSPC","^IXIC","QQQ","^SOX",
+    # Risk
+    "^VIX",
+    # Rates & Dollar
+    "^TNX","^IRX","UUP",
+    # Costs
+    "CL=F","HG=F",
+    # Downstream demand proxies
+    "AAPL","TSLA"
+  ),
+  name    = c(
+    # Equipment / Tools
+    "ASML Holding","Applied Materials","Lam Research","KLA Corp","Teradyne","Onto Innovation","MKS Instruments",
+    # Materials / Inputs
+    "Entegris","Corning",
+    # Manufacturing
+    "Taiwan Semi (TSMC)","GlobalFoundries","United Microelectronics","Intel","Texas Instruments","Micron","ON Semi","Microchip Tech","STMicroelectronics",
+    # Design / Fabless
+    "NVIDIA","AMD","Broadcom","Qualcomm","Marvell Tech","Analog Devices","NXP Semiconductors",
+    # OSAT
+    "ASE Technology","Amkor Technology",
+    # Distributors
+    "Arrow Electronics","Avnet",
+    # Benchmarks
+    "iShares Semi ETF","VanEck Semi ETF","SPDR S&P Semi ETF",
+    # --- Controls we add ---
+    # Market & Tech
+    "S&P 500 Index","NASDAQ Composite","Invesco QQQ","PHLX Semiconductor",
+    # Risk
+    "CBOE VIX",
+    # Rates & Dollar
+    "US 10Y Yield","13W T-Bill","US Dollar Bullish (UUP)",
+    # Costs
+    "WTI Crude Oil (Front)","COMEX Copper (Front)",
+    # Downstream
+    "Apple","Tesla"
+  ),
+  segment = c(
+    # Equipment / Tools
+    rep("Equipment", 7),
+    # Materials / Inputs
+    rep("Materials", 2),
+    # Manufacturing
+    rep("Manufacturing", 9),
+    # Design / Fabless
+    rep("Design", 7),
+    # OSAT
+    rep("OSAT", 2),
+    # Distributors
+    rep("Distributor", 2),
+    # Benchmarks
+    rep("Benchmark", 3),
+    # --- Controls we add ---
+    # Market & Tech
+    rep("Market", 4),
+    # Risk
+    "Risk",
+    # Rates & Dollar
+    rep("Rates", 3),
+    # Costs
+    rep("Costs", 2),
+    # Downstream
+    rep("Downstream", 2)
+  )
+)
+```
+
+### 2.2 Setting Data Range
+
+```{r}
+#| echo: false
+#| warning: false
+#we set date range for the data
+from_date <- as.Date("2018-01-01") #start
+to_date   <- as.Date("2025-10-24")   #end
+```
+
+### 2.3 Downloading the Data from YF
+
+```{r}
+#| echo: false
+#| warning: false
+#we download daily stock price data from Yahoo Finance for all tickers #and this function gets the stock data for the tickers we defined earlier from Yahoo
+prices_raw <- tidyquant::tq_get(
+  x    = tickers_tbl$ticker,   # the list of tickers
+  get  = "stock.prices",       # we want daily stock prices
+  from = from_date,            # from the start date
+  to   = to_date               # until the end date
+)
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#we combine the stock prices with the ticker names and segments
+df_1_raw <- prices_raw %>%
+  dplyr::rename(ticker = symbol) %>%               #rename 'symbol' to 'ticker'
+  dplyr::left_join(tickers_tbl, by = "ticker") %>% #add names and segments
+  dplyr::mutate(source = "yahoo") %>%              #record the source as Yahoo
+  dplyr::select(                                   #select only useful columns
+    ticker, name, segment, date, open, high, low, close, adjusted, volume, source
+  ) %>%
+  dplyr::arrange(ticker, date)                     #arrange data by ticker and date
+```
+
+### 2.5 Exploratory Data Analysis
+
+```{r}
+#| echo: false
+#| warning: false
+#first we use glimpse to get a basic summary
+glimpse(df_1_raw)            
+
+#count how many unique tickers there are
+cat("Total number of unique tickers: ", dplyr::n_distinct(df_1_raw$ticker), "\n")
+
+#then we create the log returns
+
+df_2_returns <- df_1_raw %>%
+  dplyr::group_by(ticker) %>%              #group data by ticker
+  dplyr::arrange(date, .by_group = TRUE) %>%  #sort by date within each ticker group
+  dplyr::mutate(ret_log = log(adjusted / dplyr::lag(adjusted))) %>% 
+  #calculate log returns
+  dplyr::ungroup()                            #ungroup after the calculation
+
+df_2_returns <- df_2_returns %>%
+  dplyr::filter(!is.na(ret_log))
+
+#eda
+
+#summary
+summary_tbl <- df_2_returns %>%
+  dplyr::group_by(ticker, name, segment) %>%  #group by ticker, name, and segment
+  dplyr::summarise(
+    n_obs   = sum(!is.na(ret_log)),         #number of observations but with not na
+    mean    = mean(ret_log, na.rm = TRUE),  #mean return
+    median  = median(ret_log, na.rm = TRUE), #median return
+    sd      = sd(ret_log, na.rm = TRUE),    #standard deviation (volatility)
+    min     = min(ret_log, na.rm = TRUE),   #minimum return
+    max     = max(ret_log, na.rm = TRUE),   #maximum return
+    skew    = moments::skewness(ret_log, na.rm = TRUE),  #skewness (measuring asymmetry)
+    kurt    = moments::kurtosis(ret_log, na.rm = TRUE),  #kurtosis (measuring extreme values)
+    jb_p    = tryCatch(tseries::jarque.bera.test(stats::na.omit(ret_log))$p.value,
+                       error = function(e) NA_real_),   #jarquebera test for normality
+    .groups = "drop"  #drop the grouping after summarizing
+  ) %>%
+  dplyr::arrange(segment, ticker)       #arrange by segment and ticker
+
+#show the descriptive statistics table
+knitr::kable(summary_tbl, caption = "Descriptive statistics by asset (log returns)")
+
+#top 10 by volatility (highest standard deviation)
+print("Top 10 tickers by volatility (highest sd")
+top_volatility <- summary_tbl %>% dplyr::arrange(dplyr::desc(sd)) %>% head(10)
+knitr::kable(top_volatility)
+
+#op 10 by negative skew (lowest skew)
+print("Top 10 tickers by negative skew (lowest skew)")
+top_neg_skew <- summary_tbl %>% dplyr::arrange(skew) %>% head(10)
+knitr::kable(top_neg_skew)
+
+#ttop 10 by highest kurtosis (fat tails)
+print("Top 10 tickers by highest kurtosis")
+top_kurtosis <- summary_tbl %>% dplyr::arrange(dplyr::desc(kurt)) %>% head(10)
+knitr::kable(top_kurtosis)
+
+returns_wide <- df_2_returns %>%
+dplyr::select(date, ticker, ret_log) %>% # Select the relevant columns
+tidyr::spread(key = ticker, value = ret_log) %>% # Convert to wide format
+tidyr::drop_na()
+```
+
+## III. PROBABILITY & DISTRIBUTION ANALYSIS
+
+### 3.1 Select Variable (NVIDIA log returns)
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+nvda_ret <- df_2_returns %>%
+dplyr::filter(ticker == "NVDA", !is.na(ret_log)) %>%
+dplyr::select(date, ret_log) %>%
+dplyr::mutate(year = lubridate::year(date))
+
+#quick summary of observations for nvda
+
+cat("✅ Observations for NVDA:", nrow(nvda_ret), "\n")
+print(summary(nvda_ret$ret_log))  # summary of log returns
+
+```
+
+### 3.2 Empirical PDF and CDF
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+# empirical probability density function (pdf)
+
+nvda_density <- stats::density(nvda_ret$ret_log, na.rm = TRUE)
+dens_df <- tibble::tibble(x = nvda_density$x, y = nvda_density$y)
+
+# plot histogram with overlaid density curve
+
+ggplot2::ggplot(nvda_ret, ggplot2::aes(x = ret_log)) +
+ggplot2::geom_histogram(ggplot2::aes(y = ..density..), bins = 60, fill = "#1DB954", alpha = 0.5, color = "white") +
+ggplot2::geom_line(data = dens_df, ggplot2::aes(x, y), color = "darkgreen", linewidth = 0.9) +
+ggplot2::labs(title = "nvidia — empirical pdf (log returns)", x = "log return", y = "density") +
+ggplot2::theme_minimal()
+
+# empirical cumulative distribution function (cdf)
+
+ggplot2::ggplot(nvda_ret, ggplot2::aes(x = ret_log)) +
+ggplot2::stat_ecdf(geom = "step", color = "#1DB954", linewidth = 0.9) +
+ggplot2::labs(title = "nvidia — empirical cdf (log returns)", x = "log return", y = "cumulative probability") +
+ggplot2::theme_minimal()
+
+```
+
+### 3.3 Normality Tests and QQ plots
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#performing normality tests
+n_sub     <- min(5000, nrow(nvda_ret))
+shapiro_p <- stats::shapiro.test(nvda_ret$ret_log[1:n_sub])$p.value
+jb_p      <- tseries::jarque.bera.test(stats::na.omit(nvda_ret$ret_log))$p.value
+skew_val  <- moments::skewness(nvda_ret$ret_log)
+kurt_val  <- moments::kurtosis(nvda_ret$ret_log)
+
+#print normality test results
+
+cat("\n### normality tests for nvidia log returns ###\n")
+cat("shapiro p-value:", formatC(shapiro_p, format = "e", digits = 2), "\n")
+cat("jarque-bera p-value :", formatC(jb_p, format = "e", digits = 2), "\n")
+cat("skewness:", round(skew_val, 3), " | kurtosis:", round(kurt_val, 3), "\n")
+
+#qq plot to visually inspect normality
+
+stats::qqnorm(nvda_ret$ret_log, main = "qq plot for nvda log returns vs normal")
+stats::qqline(nvda_ret$ret_log, col = "blue", lwd = 2)
+
+```
+
+### 3.4 Probability Analysis
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+thresholds_log <- c(0, log(1.01), log(1.02), log(1.03), log(1.04))
+names(thresholds_log) <- c("positive", "1%", "2%", "3%", "4%")
+
+#calculate empirical probabilities for each threshold
+
+probs_log <- sapply(thresholds_log, function(th)
+mean(nvda_ret$ret_log > th, na.rm = TRUE)
+)
+
+#display probabilities as a table
+
+prob_tbl_log <- tibble::tibble(
+threshold_label = names(thresholds_log),
+simple_return   = c("0%", "1%", "2%", "3%", "4%"),
+log_threshold   = round(thresholds_log, 5),
+probability     = round(probs_log * 100, 2)
+)
+
+cat("\n### empirical probabilities (log returns) — p(x > threshold) ###\n")
+print(prob_tbl_log)
+
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+# create histogram and density plot
+ggplot(nvda_ret, aes(x = ret_log)) +
+  geom_histogram(aes(y = ..density..), bins = 60, fill = "#1DB954", alpha = 0.5, color = "white") +  # Histogram
+  geom_density(color = "darkgreen", linewidth = 0.9) +  # Density line
+  labs(title = "NVIDIA — Empirical PDF (Log Returns)", x = "Log Return", y = "Density") +
+  
+  #add vertical lines for specific thresholds (1%, 2%, 3%)
+  geom_vline(data = prob_tbl_log[prob_tbl_log$simple_return %in% c("1%", "2%", "3%"),], 
+             aes(xintercept = log_threshold, color = simple_return), 
+             linetype = "dashed", size = 1) +
+  
+  #define colors for the lines in the legend
+  scale_color_manual(values = c("1%" = "blue", "2%" = "red", "3%" = "green")) +
+  
+  #position the legend at the top
+  theme(legend.position = "top", legend.title = element_blank())
+
+
+```
+
+## IV. REGRESSION ANALYSIS
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| 
+
+#rename etf without ^
+if ("^SOX" %in% names(returns_wide)) {
+  returns_wide <- returns_wide %>% rename(SOX = `^SOX`)
+}
+
+#relevant tickers selection
+tickers <- c(
+  "NVDA","ADI","AMAT","AMD","ASML","AVGO","ENTG","INTC","KLAC","LRCX",
+  "MCHP","MRVL","MU","NXPI","ON","ONTO","QCOM","SMH","SOXX","TER",
+  "TSLA","TSM","TXN","XSD","SOX"
+)
+
+#ensure only selected tickers are in returns_wide
+tickers <- intersect(tickers, names(returns_wide))
+
+#automatically calculate log-returns
+returns_log <- returns_wide %>%
+  arrange(date) %>%
+  mutate(across(all_of(tickers),
+                ~ log(.x / lag(.x)),
+                .names = "{.col}_logreturn")) %>%
+  drop_na()
+
+#dataset with only _logreturn columns
+data_log <- returns_log %>%
+  select(ends_with("_logreturn")) %>%
+  drop_na()
+
+#ensure NVDA_logreturn is present
+stopifnot("NVDA_logreturn" %in% names(data_log))
+cat("✅ Log-returns generated for", ncol(data_log), "tickers.\n")
+
+#PCAS
+y <- data_log$NVDA_logreturn
+X <- data_log %>% select(-NVDA_logreturn)
+
+#scale the features for PCA
+X_scaled <- scale(X)
+
+#perform PCA
+pca_res  <- prcomp(X_scaled, center = TRUE, scale. = TRUE)
+
+#extract the first 6 principal components
+pcs6 <- as.data.frame(pca_res$x[, 1:6, drop = FALSE])
+names(pcs6) <- paste0("PC", 1:6)
+
+#show explained variance
+var_exp <- (pca_res$sdev^2) / sum(pca_res$sdev^2)
+cat("\nExplained variance (6 PCs):", round(sum(var_exp[1:6])*100, 2), "%\n")
+
+#OLS with Robust Errors
+df_ols <- bind_cols(NVDA_logreturn = y, pcs6)
+ols_fit <- lm(NVDA_logreturn ~ ., data = df_ols)
+
+cat("\n--- OLS (NVDA_logreturn ~ 6 PCs) ---\n")
+print(summary(ols_fit))
+
+#robust Standard Errors HC3
+hc3_se <- vcovHC(ols_fit, type = "HC3")
+print(coeftest(ols_fit, vcov = hc3_se))
+
+#breusch-Pagan Test for Heteroscedasticity
+cat("\n--- Breusch-Pagan Test for Heteroscedasticity ---\n")
+print(bptest(ols_fit))
+
+#normality of Residuals ---
+cat("\n--- Normality of Residuals ---\n")
+resid_ols <- residuals(ols_fit)
+print(shapiro.test(sample(resid_ols, min(5000, length(resid_ols)))))
+print(jarque.bera.test(resid_ols))
+
+#LOGIT (Yes/No Return)
+#create binary variable: 1 if return > 0, else 0
+NVDA_up <- as.integer(y > 0)
+df_logit <- bind_cols(NVDA_up = NVDA_up, pcs6)
+
+logit_fit <- glm(NVDA_up ~ ., data = df_logit, family = binomial())
+
+cat("\n--- LOGIT (Positive Return ~ 6 PCs) ---\n")
+print(summary(logit_fit))
+
+#make predictions
+p_pred <- predict(logit_fit, type = "response")
+pred <- ifelse(p_pred >= 0.5, 1, 0)
+
+#confusion matrix and accuracy
+tab <- table(Truth = df_logit$NVDA_up, Pred = pred)
+acc <- mean(pred == df_logit$NVDA_up)
+cat("\nConfusion Matrix (Yes/No Return):\n")
+print(tab)
+cat("Accuracy (cutoff=0.5):", round(acc, 3), "\n")
+
+cat("\nProportion of positive returns in the dataset:", round(mean(df_logit$NVDA_up), 3), "\n")
+cat("\n✅ Model completed: OLS + LOGIT on 6 PCs (auto-generated log-returns).\n")
+
+
+
+```
+
+```{r}
+#extract residuals and fitted values from the OLS model
+resid_ols   <- residuals(ols_fit)
+fitted_ols  <- fitted(ols_fit)
+
+#for error fixing
+time_index <- seq_along(resid_ols)
+
+#fitted value vs residualts
+ggplot(
+  data.frame(Fitted = fitted_ols, Residuals = resid_ols),
+  aes(x = Fitted, y = Residuals)
+) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linewidth = 1) +
+  labs(
+    title = "Fitted Values vs Residuals",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+ 
+#residuals over time
+ggplot(
+  data.frame(Observation = time_index, Residuals = resid_ols),
+  aes(x = Observation, y = Residuals)
+) +
+  geom_line(color = "steelblue") +
+  geom_hline(yintercept = 0, color = "red", linewidth = 1) +
+  labs(
+    title = "Residuals Over Time",
+    x = "Observation",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+#scale location
+ggplot(
+  data.frame(Fitted = fitted_ols,
+             SqrtAbsResid = sqrt(abs(resid_ols))),
+  aes(x = Fitted, y = SqrtAbsResid)
+) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "loess", se = FALSE, color = "red") +
+  labs(
+    title = "Scale–Location Plot",
+    x = "Fitted Values",
+    y = "√|Residuals|"
+  ) +
+  theme_minimal()
+
+#qq plot
+ggplot(
+  data.frame(Residuals = resid_ols),
+  aes(sample = Residuals)
+) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(
+    title = "Q–Q Plot of Residuals",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+#normality test
+cat("\n--- Shapiro–Wilk Normality Test ---\n")
+print(shapiro.test(resid_ols))
+
+cat("\n--- Jarque–Bera Normality Test ---\n")
+print(jarque.bera.test(resid_ols))
+
+
+
+
+```
+
+```{r}
+
+
+#residuals and fitted values
+resid_ols  <- residuals(ols_fit)
+fitted_ols <- fitted(ols_fit)
+
+#residuals vs Fitted
+ggplot(
+  data.frame(Fitted = fitted_ols, Residuals = resid_ols),
+  aes(x = Fitted, y = Residuals)
+) +
+  geom_point(alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linewidth = 1) +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+#cook's Distance plot
+cook_vals <- cooks.distance(ols_fit)
+
+ggplot(
+  data.frame(Observation = seq_along(cook_vals), CookD = cook_vals),
+  aes(x = Observation, y = CookD)
+) +
+  geom_bar(stat = "identity", alpha = 0.7) +
+  geom_hline(yintercept = 1, color = "red", linetype = "dashed") +
+  labs(
+    title = "Cook's Distance",
+    x = "Observation",
+    y = "Cook's D"
+  ) +
+  theme_minimal()
+
+#VIF bar plot
+vif_vals <- vif(ols_fit)
+vif_df <- data.frame(
+  Variable = names(vif_vals),
+  VIF      = as.numeric(vif_vals)
+)
+
+ggplot(vif_df, aes(x = reorder(Variable, VIF), y = VIF)) +
+  geom_col(alpha = 0.7) +
+  coord_flip() +
+  labs(
+    title = "Variance Inflation Factors (VIF)",
+    x = "Predictor",
+    y = "VIF"
+  ) +
+  theme_minimal()
+
+```
+
+## V. HERDING
+
+```{r}
+#filter log returns for the tickers of interest (NVDA, QCOM, TSM, AMD)
+
+#we use df_2_returns to filter the data for the selected tickers and calculate the log returns.
+
+tickers <- c("NVDA", "QCOM", "TSM", "AMD")
+
+#we filter the data to select only the required tickers and remove any rows with missing values
+
+log_returns <- df_2_returns %>%
+dplyr::filter(ticker %in% tickers) %>%  #filter for selected tickers
+dplyr::select(date, ticker, ret_log) %>%  #select date, ticker, and log returns
+tidyr::spread(key = ticker, value = ret_log) %>%  #spread the data to a wide format (tickers as columns)
+tidyr::drop_na()  #drop any rows with missing values (after spreading)
+
+#CSAD measures the dispersion of individual stock returns around the average market return.
+#define the CSAD calculation function
+
+calculate_CSID <- function(return_data) {
+
+#calculate the average market return (Rm) by taking the row means of returns
+
+Rm <- rowMeans(return_data, na.rm = TRUE)
+
+#calculate the absolute deviation of each stock's return from the market return
+
+CSAD <- rowMeans(abs(return_data - Rm), na.rm = TRUE)
+return(CSAD)
+}
+
+#apply the CSAD function to the log returns data (excluding the date column)
+
+CSAD_values <- calculate_CSID(log_returns[,-1])  #exclude the date column
+#create a new dataframe for the CSAD analysis
+CSAD_df <- data.frame(Date = log_returns$date, CSAD = CSAD_values, Rm = rowMeans(log_returns[,-1], na.rm = TRUE))
+CSAD_df$Rm2 <- CSAD_df$Rm^2  #we addd the quadratic term (Rm^2) to capture non-linearity
+#nw, we fit a linear model that includes both the market return (Rm) and the quadratic term (Rm^2)
+model <- lm(CSAD ~ Rm + Rm2, data = CSAD_df)
+#display the summary of the model to check the coefficients and significance
+summary(model)
+#visualize the Results
+#plot CSAD against the market return (Rm) with the fitted regression line
+plot(CSAD_df$Rm, CSAD_df$CSAD, main = "CSAD vs. Rm", xlab = "Market Return (Rm)", ylab = "CSAD", col = "blue")
+abline(model, col = "red")  # Add the regression line
+
+
+```
+
+## VI. TIME SERIES MODELING
+
+```{r}
+soxx_ret <- df_2_returns %>%
+dplyr::filter(ticker == "SOXX") %>%
+dplyr::select(date, ret_log) %>%
+tidyr::drop_na()
+#check for volatility clustering
+#we use the bbox-ljung test and ARCH test to check for autocorrelation and volatility clustering in returns
+Box.test(soxx_ret$ret_log, lag = 10, type = "Ljung-Box")
+ArchTest(soxx_ret$ret_log, lags = 10)
+#define and fit EGARCH(1,1) model
+spec_egarch <- ugarchspec(
+variance.model = list(model = "eGARCH", garchOrder = c(1, 1)),
+mean.model     = list(armaOrder = c(1, 1), include.mean = TRUE),
+distribution.model = "std"
+)
+#fit the model to the SOXX returns
+fit_egarch <- ugarchfit(spec = spec_egarch, data = soxx_ret$ret_log)
+#show model summary
+show(fit_egarch)
+#visualize key plots from the EGARCH model
+par(mfrow = c(2, 2), mar = c(2, 2, 2, 2))
+plot(fit_egarch, which = 1)  #Conditional variance plot
+plot(fit_egarch, which = 2)  #Standardized residuals plot
+plot(fit_egarch, which = 3)  #ACF of residuals plot
+plot(fit_egarch, which = 9)  #QQ plot of residuals
+
+```
+
+## VII. FACTOR ANALYSIS / PCA
+
+```{r}
+###alredy in the regression part
+```
+
+## 
