@@ -49,7 +49,6 @@ PCA · Robust OLS · Logistic Regression · CSAD Herding Test · EGARCH Volatili
 5. [Conclusion](#-conclusion)
 6. [Repo contents](#-repo-contents)
 7. [Stack](#%EF%B8%8F-stack)
-8. [A note on AI usage](#-a-note-on-ai-usage-in-this-repo)
 
 ---
 
@@ -160,12 +159,6 @@ The results **support H₁**: semiconductor-chain returns are significantly link
 <img src="https://img.shields.io/badge/ggplot2-blue?style=flat-square"/>
 <img src="https://img.shields.io/badge/sandwich%20%2F%20lmtest-blue?style=flat-square"/>
 </p>
-
-## 🤖 A note on AI usage in this repo
-
-The **econometric analysis, code, and academic report are 100% Ludovic's own work**, submitted with its own official AI-usage disclosure to Rennes School of Business (see [`LLM_Usage_Disclosure.pdf`](LLM_Usage_Disclosure.pdf)).
-
-**Claude (Anthropic)** was used *afterwards*, and only for one thing: organizing the local project files and publishing this repository to GitHub in a clean, structured way.
 
 ---
 
